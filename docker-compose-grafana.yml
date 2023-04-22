@@ -28,10 +28,3 @@ services:
       - prometheus
     ports:
       - 9100:9100
-
-# admin/admin login 
-
-
-# docker pull prom/prometheus:v2.43.0
-# docker pull prom/node-exporter:v1.5.0
-# docker pull grafana/grafana:9.4.7
