@@ -102,9 +102,13 @@ localhost:3000
 
 
 
+## dashboard
 
+https://grafana.com/grafana/dashboards/1860-node-exporter-full/
 
+```
+https://grafana.com/grafana/dashboards/1860
+```
 
-
-
+dashboard => import [ paste link ]
 
