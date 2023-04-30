@@ -84,17 +84,20 @@ docker run -d \
 - RHEL/CentOS: glibc-static package.
 
 
+```
 go get github.com/prometheus/node_exporter
 cd ${GOPATH-$HOME/go}/src/github.com/prometheus/node_exporter
 make
+```
 
 RUN WITH => ./node_exporter 
 
-/temp/prometheus.yml
+## /temp/prometheus.yml
 
+```yml
 # - targets: ['localhost:9090']
 - targets: ['localhost:9090', 'ip-address:9100']
-
+```
 
 docker restart prometheus
 
