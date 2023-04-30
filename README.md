@@ -101,6 +101,15 @@ docker restart prometheus
 localhost:3000
 
 
+## microk8s
+
+microk8s kubectl port-forward -n observability service/prometheus-operated --address 0.0.0.0 9090:9090
+
+```
+microk8s kubectl port-forward -n kube-system service/kubernetes-dashboard --address 0.0.0.0 10443:443 > /dev/null &
+microk8s kubectl port-forward -n observability service/kube-prom-stack-kube-prome-prometheus --address 0.0.0.0 9090:9090 > /dev/null &
+microk8s kubectl port-forward -n observability service/kube-prom-stack-grafana --address 0.0.0.0 3000:80 > /dev/null &
+```
 
 ## dashboard
 
