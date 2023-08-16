@@ -114,6 +114,31 @@ microk8s kubectl port-forward -n observability service/kube-prom-stack-kube-prom
 microk8s kubectl port-forward -n observability service/kube-prom-stack-grafana --address 0.0.0.0 3000:80 > /dev/null &
 ```
 
+## ingress grafana
+
+```yml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-grafana
+  labels:
+    app: grafana
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - host: grafana.192.168.1.253.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prom-stack-grafana
+                port:
+                  number: 80
+```
+
 ## dashboard
 
 https://grafana.com/grafana/dashboards/1860-node-exporter-full/
