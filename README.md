@@ -1,5 +1,4 @@
-# lern-grafana
-lerning grafana
+# Lerning Grafana
 
 ## dashboard
 
