@@ -1,0 +1,185 @@
+ได้เลย นี่คือตัวอย่าง Kubernetes YAML สำหรับ **Grafana** ที่มี **PV + PVC ขนาดเริ่มต้น 128Mi** (ประมาณ 128MB), **รองรับการขยาย (expandable)** และมี **คำสั่งขยาย** ให้ครบ
+
+> หมายเหตุสำคัญ: การ “ขยาย PVC” จะทำได้จริงก็ต่อเมื่อ
+>
+> 1. StorageClass ที่ใช้ **อนุญาต allowVolumeExpansion: true** และ
+> 2. ตัว provisioner/ระบบ storage รองรับ resize
+>    ถ้าคุณใช้ PV แบบ `hostPath` (ตัวอย่างนี้) การ expand ในเชิง storage จริงอาจไม่เกิดขึ้นเหมือน storage แบบ dynamic (เช่น EBS/NFS/CSI ต่าง ๆ) แต่ YAML/ขั้นตอนการขยาย PVC ทำตามมาตรฐานได้
+
+---
+
+## 1) YAML: PV + PVC (128Mi, expandable) + Grafana Deployment + Service
+
+> ไฟล์เดียวก็ได้ เช่น `grafana-pv-pvc-deploy.yaml`
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: grafana-pv
+spec:
+  capacity:
+    storage: 128Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: grafana-local
+  volumeMode: Filesystem
+  hostPath:
+    path: /data/grafana
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: grafana-local
+  resources:
+    requests:
+      storage: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: grafana-storage
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-svc
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
+```
+
+Apply:
+
+```bash
+kubectl apply -f grafana-pv-pvc-deploy.yaml
+```
+
+Port-forward เพื่อเข้าใช้งาน:
+
+```bash
+kubectl port-forward svc/grafana-svc 3000:3000
+```
+
+---
+
+## 2) ทำให้ “ขยายได้จริง”: StorageClass ที่ allowVolumeExpansion
+
+สำหรับ PV/PVC แบบ “local/hostPath” เราใส่ `storageClassName: grafana-local` ไว้แล้ว
+แต่เพื่อให้ Kubernetes “อนุญาตให้แก้ request storage เพิ่ม” ให้สร้าง StorageClass นี้ด้วย
+
+> ไฟล์ `grafana-storageclass.yaml`
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: grafana-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+```
+
+Apply:
+
+```bash
+kubectl apply -f grafana-storageclass.yaml
+```
+
+> ถ้าคุณใช้ CSI/dynamic provisioning จริง ๆ (เช่น EBS/Longhorn/Rook/Ceph/NFS CSI) ให้ใช้ StorageClass ของระบบนั้นแทน และตรวจว่า `allowVolumeExpansion: true`
+
+---
+
+## 3) คำสั่ง “ขยาย PVC”
+
+### วิธี A: แก้ YAML แล้ว apply ใหม่
+
+แก้จาก 128Mi เป็นเช่น 512Mi:
+
+```yaml
+resources:
+  requests:
+    storage: 512Mi
+```
+
+แล้วรัน:
+
+```bash
+kubectl apply -f grafana-pv-pvc-deploy.yaml
+```
+
+### วิธี B: kubectl patch (เร็วสุด)
+
+ตัวอย่างขยายเป็น 512Mi:
+
+```bash
+kubectl patch pvc grafana-pvc -p '{"spec":{"resources":{"requests":{"storage":"512Mi"}}}}'
+```
+
+ตรวจสถานะ:
+
+```bash
+kubectl get pvc grafana-pvc
+kubectl describe pvc grafana-pvc
+```
+
+---
+
+## 4) ถ้าขยายแล้วไม่ขึ้น (Pending/ไม่ resize จริง)
+
+* เช็คว่า PVC ใช้ StorageClass ที่ `allowVolumeExpansion: true`
+
+```bash
+kubectl get sc grafana-local -o yaml
+```
+
+* ถ้าเป็น storage บางชนิด ต้อง restart pod เพื่อให้ filesystem ขยายใน container:
+
+```bash
+kubectl rollout restart deploy/grafana
+```
+
+---
+
+ถ้าคุณบอกได้ว่า cluster ใช้ storage อะไร (เช่น **EKS EBS**, **GKE PD**, **Longhorn**, **Rook/Ceph**, **NFS CSI**, หรือแค่เครื่องเดียวแบบ **minikube/kind**) ผมจะปรับ YAML ให้ “ขยายได้จริง 100%” ตาม provisioner นั้น ๆ ให้เลย (รวม policy และ annotation ที่เหมาะสม)
